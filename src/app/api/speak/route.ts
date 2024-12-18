@@ -74,6 +74,8 @@ export async function POST(request: Request) {
       return new Response("Data failed to upload", { status: 400 });
     }
 
+    console.log(uploadData);
+
     // Reply with link to this data
     return new Response(JSON.stringify({ url: uploadData.url }), {
       status: 200,
