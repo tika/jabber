@@ -21,6 +21,7 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const mp3 = formData.get("mp3") as File;
+    const prompt = formData.get("prompt") as string;
 
     if (!mp3) {
       return new Response("No mp3 file", { status: 400 });
@@ -40,7 +41,8 @@ export async function POST(request: Request) {
         {
           role: "user",
           content:
-            "You are a helpful assistant that is speaking (in human language) to a customer. Please respond to what the customer has said: " +
+            prompt +
+            ". Using this knowledge, here is what the user has said : " +
             transcription.text,
         },
       ],
