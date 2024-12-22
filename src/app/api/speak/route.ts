@@ -1,13 +1,11 @@
-// app/api/speak/route.ts
-
 import { aiClient } from "@/lib/openai";
 import { utapi } from "@/lib/uploadthing";
 
 function arrayBufferToFile(
-  arrayBuffer: ArrayBuffer,
+  arrayBuffer: ArrayBuffer | Buffer,
   fileName: string,
   mimeType = "application/octet-stream"
-) {
+): File {
   // Create a Blob from the ArrayBuffer
   const blob = new Blob([arrayBuffer], { type: mimeType });
 
@@ -59,7 +57,7 @@ export async function POST(request: Request) {
     });
 
     // Convert this speechReply into a File
-    const buffer = Buffer.from(await speechReply.arrayBuffer());
+    const buffer = Buffer.from(await speechReply.arrayBuffer()) as Buffer;
 
     // Convert buffer to File
     // const blob = new Blob([buffer], { type: "audio/mpeg" }) as File;
@@ -83,14 +81,16 @@ export async function POST(request: Request) {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (error: any) {
-    console.error("Error in speak route:", error);
-    return new Response(
-      JSON.stringify({ error: error.message || "Failed to process audio" }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error("Error in speak route:", error);
+      return new Response(
+        JSON.stringify({ error: error.message || "Failed to process audio" }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
   }
 }
