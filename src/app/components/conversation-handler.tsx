@@ -1,3 +1,4 @@
+import { useMicVAD, utils } from "@ricky0123/vad-react";
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -14,7 +15,6 @@ export function ConversationHandler({
   generateAgentResponse: (file: File) => Promise<string>;
 }) {
   // =========== State Management ===========
-  const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingTime, setProcessingTime] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -22,18 +22,49 @@ export function ConversationHandler({
     null
   );
 
+  const mediaStream = useRef<MediaStream>();
+
+  // initialise mediastream (microphone)
+  useEffect(() => {
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((stream) => {
+        mediaStream.current = stream;
+      })
+      .catch((err) => {
+        setError(err.message);
+      });
+
+    return () => {
+      mediaStream.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  const vad = useMicVAD({
+    startOnLoad: false,
+    onSpeechEnd: async (audio) => {
+      const wavBuffer = utils.encodeWAV(audio);
+
+      const file = new File([wavBuffer], "audio.wav", {
+        type: "audio/wav",
+      });
+
+      const startTime = Date.now();
+      setIsProcessing(true);
+      const response = await generateAgentResponse(file);
+      setIsProcessing(false);
+
+      setProcessingTime(Date.now() - startTime);
+
+      setAgentResponseAudio(response);
+    },
+    minSpeechFrames: 10, // 10 frames = 200ms
+    stream: mediaStream.current,
+  });
+
   // =========== Refs ===========
   // Audio element reference for playing agent responses
   const audioRef = useRef<HTMLAudioElement>(null);
-
-  // Audio recording and processing references
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-
-  // Web Audio API references
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
 
   // =========== Effects ===========
   // Auto-play agent response when available
@@ -42,124 +73,6 @@ export function ConversationHandler({
       audioRef.current.play().catch(console.error);
     }
   }, [agentResponseAudio]);
-
-  // Cleanup on component unmount
-  useEffect(() => {
-    return cleanup;
-  }, []);
-
-  // =========== Core Recording Functions ===========
-  /**
-   * Initializes audio recording by setting up microphone stream and audio processing nodes
-   */
-  const startRecording = async () => {
-    setError(null);
-    setAgentResponseAudio(null);
-
-    try {
-      // Set up audio stream
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-
-      // Initialize Web Audio API components
-      const audioContext = new AudioContext();
-      const analyser = audioContext.createAnalyser();
-      const source = audioContext.createMediaStreamSource(stream);
-
-      analyser.fftSize = 256;
-      source.connect(analyser);
-
-      // Store audio processing references
-      audioContextRef.current = audioContext;
-      sourceRef.current = source;
-
-      // Set up MediaRecorder
-      const recorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = recorder;
-      audioChunksRef.current = [];
-
-      // Configure recorder events
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-      recorder.onstop = handleRecordingComplete;
-
-      // Start recording
-      recorder.start();
-      setIsRecording(true);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to start recording"
-      );
-    }
-  };
-
-  /**
-   * Stops the current recording session and cleans up audio resources
-   */
-  const stopRecording = () => {
-    if (mediaRecorderRef.current?.state !== "inactive") {
-      mediaRecorderRef.current?.stop();
-      setIsRecording(false);
-    }
-    cleanup();
-  };
-
-  // =========== Audio Processing Functions ===========
-  /**
-   * Handles the recorded audio when recording is complete
-   */
-  const handleRecordingComplete = async () => {
-    if (audioChunksRef.current.length === 0) return;
-
-    setIsProcessing(true);
-    try {
-      await handleAudioSubmission();
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to process recording"
-      );
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  /**
-   * Processes the recorded audio and sends it to the agent
-   */
-  const handleAudioSubmission = async () => {
-    const blob = audioChunksRef.current[0];
-    const file = new File([blob], "audio.wav", { type: "audio/wav" });
-
-    const startTime = Date.now();
-    setIsProcessing(true);
-
-    const response = await generateAgentResponse(file);
-    setAgentResponseAudio(response);
-
-    setIsProcessing(false);
-    setProcessingTime(Date.now() - startTime);
-  };
-
-  /**
-   * Cleans up all audio resources and references
-   */
-  const cleanup = () => {
-    // Close audio context if it's open
-    if (audioContextRef.current?.state !== "closed") {
-      audioContextRef.current?.close();
-    }
-
-    // Stop all audio tracks
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-
-    // Clear all refs
-    sourceRef.current = null;
-    audioContextRef.current = null;
-    streamRef.current = null;
-  };
 
   // =========== Render ===========
   return (
@@ -174,9 +87,9 @@ export function ConversationHandler({
       <div className="flex flex-col items-center gap-4">
         {/* Recording Control Button */}
         <button
-          onClick={isRecording ? stopRecording : startRecording}
+          onClick={vad.listening ? vad.pause : vad.start}
           className={`px-4 py-2 rounded-md font-medium transition-colors ${
-            isRecording
+            vad.listening
               ? "bg-red-500 hover:bg-red-600 text-white"
               : "bg-blue-500 hover:bg-blue-600 text-white"
           }`}
@@ -184,7 +97,7 @@ export function ConversationHandler({
         >
           {isProcessing
             ? "Processing..."
-            : isRecording
+            : vad.listening
             ? "Stop Conversation"
             : "Start Conversation"}
         </button>

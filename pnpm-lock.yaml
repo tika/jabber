@@ -5,9 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 dependencies:
-  '@ricky0123/vad-web':
-    specifier: ^0.0.22
-    version: 0.0.22
+  '@ricky0123/vad-react':
+    specifier: ^0.0.28
+    version: 0.0.28(react-dom@18.3.1)(react@18.3.1)
   next:
     specifier: 14.2.13
     version: 14.2.13(react-dom@18.3.1)(react@18.3.1)
@@ -328,6 +328,18 @@ packages:
 
   /@protobufjs/utf8@1.1.0:
     resolution: {integrity: sha512-Vvn3zZrhQZkkBE8LSuW3em98c0FwgO4nxzv6OdSxPKJIEKY2bGbHn+mhGIPerzI4twdxaP8/0+06HBpwf345Lw==}
+    dev: false
+
+  /@ricky0123/vad-react@0.0.28(react-dom@18.3.1)(react@18.3.1):
+    resolution: {integrity: sha512-V2vcxhT31/tXCxqlYLJz+JzywXijMWUhp2FN30OL/NeuSwwprArhaAoUZSdjg6Hzsfe5t2lwASoUaEmGrQ/S+Q==}
+    peerDependencies:
+      react: '18'
+      react-dom: '18'
+    dependencies:
+      '@ricky0123/vad-web': 0.0.22
+      onnxruntime-web: 1.14.0
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
     dev: false
 
   /@ricky0123/vad-web@0.0.22:

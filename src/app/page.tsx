@@ -45,7 +45,12 @@ export default function Home() {
           className="bg-gray-900 px-4 py-2 rounded-md w-full"
         ></textarea>
       </div>
-      <p>Chat is {chatHistory.length} messages long</p>
+      <div className="text-gray-400 text-sm flex justify-between">
+        <p>
+          Chat is {chatHistory.length} messages long, but only the last 10
+          messages will be remembered
+        </p>
+      </div>
       <ConversationHandler generateAgentResponse={generateResponse} />
     </div>
   );
