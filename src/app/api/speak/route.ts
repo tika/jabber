@@ -20,10 +20,23 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const mp3 = formData.get("mp3") as File;
     const prompt = formData.get("prompt") as string;
+    const chatHistory = formData.get("chatHistory") as string;
 
     if (!mp3) {
       return new Response("No mp3 file", { status: 400 });
     }
+
+    if (!prompt) {
+      return new Response("No prompt", { status: 400 });
+    }
+
+    if (!chatHistory) {
+      return new Response("No chat history", { status: 400 });
+    }
+
+    // Limit chatHistory to be last 10 messages)
+    const chatHistoryMessages = JSON.parse(chatHistory).slice(-10);
+    console.log(chatHistoryMessages);
 
     // Transcribe the audio
     const transcription = await aiClient.audio.transcriptions.create({
@@ -34,13 +47,16 @@ export async function POST(request: Request) {
     console.log("Transcribed!");
 
     // Do a completion with the transcribed text
+    // Add chat history
     const completion = await aiClient.chat.completions.create({
       messages: [
         {
           role: "user",
           content:
             prompt +
-            ". Using this knowledge, here is what the user has said : " +
+            ". You have already been speaking to user, and they've said the following : " +
+            chatHistoryMessages.join(" ") +
+            "(if nothing, this is a new conversation). Using this knowledge, here is what the user has now said : " +
             transcription.text,
         },
       ],
@@ -77,10 +93,16 @@ export async function POST(request: Request) {
     console.log(uploadData);
 
     // Reply with link to this data
-    return new Response(JSON.stringify({ url: uploadData.url }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        url: uploadData.url,
+        text: completion.choices[0].message.content,
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   } catch (error) {
     if (error instanceof Error) {
       console.error("Error in speak route:", error);
