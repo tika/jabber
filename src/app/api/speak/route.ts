@@ -19,15 +19,17 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const mp3 = formData.get("mp3") as File;
-    const prompt = formData.get("prompt") as string;
+    let prompt = formData.get("prompt") as string;
     const chatHistory = formData.get("chatHistory") as string;
 
     if (!mp3) {
       return new Response("No mp3 file", { status: 400 });
     }
 
+    // Set a default prompt
     if (!prompt) {
-      return new Response("No prompt", { status: 400 });
+      prompt =
+        "You are a helpful assistant that speaks in a friendly, conversational tone. Please respond to the user's queries based on the context provided.";
     }
 
     if (!chatHistory) {
@@ -45,6 +47,7 @@ export async function POST(request: Request) {
     });
 
     console.log("Transcribed!");
+    console.log(transcription.text);
 
     // Do a completion with the transcribed text
     // Add chat history
@@ -74,9 +77,6 @@ export async function POST(request: Request) {
 
     // Convert this speechReply into a File
     const buffer = Buffer.from(await speechReply.arrayBuffer()) as Buffer;
-
-    // Convert buffer to File
-    // const blob = new Blob([buffer], { type: "audio/mpeg" }) as File;
 
     const { data: uploadData, error: uploadError } = await utapi.uploadFiles(
       arrayBufferToFile(buffer, `audio${Date.now()}.mp3`)

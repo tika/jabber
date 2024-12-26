@@ -4,9 +4,7 @@ import { ConversationHandler } from "@/app/components/conversation-handler";
 import { useEffect, useState } from "react";
 
 export default function Home() {
-  const [prompt, setPrompt] = useState(
-    "You are a helpful assistant that is speaking (in human language) to a customer. Please respond to what the customer has said: "
-  );
+  const [prompt, setPrompt] = useState("");
   const [chatHistory, setChatHistory] = useState<string[]>([]);
 
   useEffect(() => {
@@ -14,7 +12,10 @@ export default function Home() {
     setChatHistory([]);
   }, [prompt]);
 
-  async function generateResponse(file: File): Promise<string> {
+  async function generateResponse(file: File): Promise<{
+    url: string;
+    transcript: string;
+  }> {
     const formData = new FormData();
 
     formData.append("mp3", file);
@@ -28,29 +29,38 @@ export default function Home() {
 
     setChatHistory([...chatHistory, response.text]);
 
-    return response.url;
+    return {
+      url: response.url,
+      transcript: response.text,
+    };
   }
 
   return (
-    <div className="px-32 py-16">
-      <h1 className="text-6xl font-bold">Jabber</h1>
-      <p className="font-medium mt-2">
-        Speak to your own AI. Simply press the button, and start a conversation.
-      </p>
-      <div className="my-4">
-        <label>Prompt</label>
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          className="bg-gray-900 px-4 py-2 rounded-md w-full"
-        ></textarea>
-      </div>
-      <div className="text-gray-400 text-sm flex justify-between">
-        <p>
-          Chat is {chatHistory.length} messages long, but only the last 10
-          messages will be remembered
+    <div className="lg:px-64 md:px-32 px-16 py-16 flex flex-col items-center gap-12">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold">Jabber</h1>
+        <p className="font-medium mt-2 text-lg text-gray-500">
+          Have natural conversations with AI. Set your context below, press the
+          button, and start talking. Built using OpenAI products.
         </p>
       </div>
+      <div className="w-full">
+        <div className="w-full">
+          <label>Set your conversation context</label>
+          <textarea
+            value={prompt}
+            placeholder="Example: You are a helpful assistant that speaks in a friendly, conversational tone..."
+            onChange={(e) => setPrompt(e.target.value)}
+            className="bg-gray-200 px-4 py-2 rounded-md w-full min-h-[100px] resize-none border-gray-200 outline-offset-2 outline-slate-300 mt-4"
+          ></textarea>
+        </div>
+        <div className="text-gray-500 text-sm flex justify-between">
+          <p>
+            Only the last 10 messages will be remembered in the conversation
+          </p>
+        </div>
+      </div>
+
       <ConversationHandler generateAgentResponse={generateResponse} />
     </div>
   );

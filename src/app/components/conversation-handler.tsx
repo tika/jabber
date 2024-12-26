@@ -1,5 +1,7 @@
 import { useMicVAD, utils } from "@ricky0123/vad-react";
+import { LoaderPinwheel } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import MicAudioVisualizer from "./mic-audio-visualizer";
 
 /**
  * ConversationHandler manages audio recording and processing for a conversation interface.
@@ -12,15 +14,22 @@ import { useEffect, useRef, useState } from "react";
 export function ConversationHandler({
   generateAgentResponse,
 }: {
-  generateAgentResponse: (file: File) => Promise<string>;
+  generateAgentResponse: (file: File) => Promise<{
+    transcript: string;
+    url: string;
+  }>;
 }) {
   // =========== State Management ===========
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingTime, setProcessingTime] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [agentResponseAudio, setAgentResponseAudio] = useState<string | null>(
-    null
-  );
+  const [agentSpeaking, setAgentSpeaking] = useState(false);
+  const [agentResponseAudio, setAgentResponseAudio] = useState<{
+    url: string;
+    file: File;
+    transcript: string;
+  } | null>(null);
+  const [inConversation, setInConversation] = useState(false);
 
   const mediaStream = useRef<MediaStream>();
 
@@ -51,12 +60,14 @@ export function ConversationHandler({
 
       const startTime = Date.now();
       setIsProcessing(true);
-      const response = await generateAgentResponse(file);
+      // Stop listening if we're processing
+      vad.pause();
+      const { url, transcript } = await generateAgentResponse(file);
       setIsProcessing(false);
 
       setProcessingTime(Date.now() - startTime);
 
-      setAgentResponseAudio(response);
+      setAgentResponseAudio({ url, file, transcript });
     },
     minSpeechFrames: 10, // 10 frames = 200ms
     stream: mediaStream.current,
@@ -70,7 +81,16 @@ export function ConversationHandler({
   // Auto-play agent response when available
   useEffect(() => {
     if (agentResponseAudio && audioRef.current) {
+      setAgentSpeaking(true);
+      vad.pause();
+
       audioRef.current.play().catch(console.error);
+
+      // After audio finishes playing, resume listening
+      audioRef.current.addEventListener("ended", () => {
+        setAgentSpeaking(false);
+        vad.start();
+      });
     }
   }, [agentResponseAudio]);
 
@@ -86,35 +106,60 @@ export function ConversationHandler({
 
       <div className="flex flex-col items-center gap-4">
         {/* Recording Control Button */}
-        <button
-          onClick={vad.listening ? vad.pause : vad.start}
-          className={`px-4 py-2 rounded-md font-medium transition-colors ${
-            vad.listening
-              ? "bg-red-500 hover:bg-red-600 text-white"
-              : "bg-blue-500 hover:bg-blue-600 text-white"
-          }`}
-          disabled={isProcessing}
-        >
-          {isProcessing
-            ? "Processing..."
-            : vad.listening
-            ? "Stop Conversation"
-            : "Start Conversation"}
-        </button>
+        {!isProcessing &&
+          (!agentSpeaking && !vad.listening ? (
+            <button
+              onClick={() => {
+                vad.start();
+                setInConversation(true);
+              }}
+              className="px-4 py-2 rounded-md font-medium transition-colors outline-offset-2 bg-blue-500 hover:bg-blue-600 text-white"
+            >
+              Start Conversation
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                vad.pause();
+                setInConversation(false);
+              }}
+              className="px-4 py-2 rounded-md font-medium transition-colors outline-offset-2 bg-red-500 hover:bg-red-600 text-white"
+            >
+              Stop Conversation
+            </button>
+          ))}
 
         {/* Audio Playback Section */}
         {agentResponseAudio && (
           <>
             <audio
               ref={audioRef}
-              controls
-              src={agentResponseAudio}
-              className="w-full max-w-md"
+              src={agentResponseAudio.url}
+              className="w-full max-w-md hidden"
             />
-            <p className="text-gray-600">
-              This took {processingTime}ms to process
-            </p>
+            {agentSpeaking && (
+              <p className="text-gray-600 font-bold">
+                This took {Math.round(processingTime / 10) / 100}s to process
+                (that&apos;s slow...)
+              </p>
+            )}
           </>
+        )}
+        {inConversation && (
+          <div>
+            {isProcessing && <LoaderPinwheel className="animate-spin" />}
+
+            {agentSpeaking && agentResponseAudio && (
+              <p className="w-full">{agentResponseAudio?.transcript}</p>
+            )}
+
+            {vad.listening && (
+              <MicAudioVisualizer
+                color="blue"
+                mediaStream={mediaStream.current}
+              />
+            )}
+          </div>
         )}
       </div>
     </div>

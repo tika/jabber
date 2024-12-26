@@ -1,7 +1,13 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import {
+  EffectComposer,
+  OutputPass,
+  RenderPass,
+} from "three/examples/jsm/Addons.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 
-// Incorporate Perlin noise here
+// Reuse existing shaders
 const vertexShader = `
   vec3 mod289(vec3 x)
   {
@@ -97,51 +103,108 @@ const vertexShader = `
   }
 
   uniform float u_time;
+  uniform float u_frequency;
 
   void main() {
-    float noise = 3. * pnoise(position + u_time, vec3(10.));
-
-    float displacement = noise / 10.;
-    vec3 newPosition = position + normal * displacement;
+    float noise = 5.0 * pnoise(position + u_time, vec3(10.));
+    float displacement = (u_frequency / 30.0) * (noise / 10.0);
+    vec3 newPosition = position + normal * displacement  ;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
   }
 `;
 
 const fragmentShader = `
+  uniform float u_red;
+  uniform float u_green;
+  uniform float u_blue;
+
   void main() {
-    gl_FragColor = vec4(1.0);
+    gl_FragColor = vec4(u_red, u_green, u_blue, 1.0);
   }
 `;
 
-export function Visualizer() {
+export default function MicAudioVisualizer({
+  mediaStream,
+  color,
+}: {
+  mediaStream: MediaStream | undefined;
+  color: string; // just a random number to identify the speaker
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+  const animationRef = useRef<number | null>(null);
 
+  useEffect(() => {
+    if (!mediaStream) return;
+
+    const audioContext = new window.AudioContext();
+    const source = audioContext.createMediaStreamSource(mediaStream);
+    const newAnalyser = audioContext.createAnalyser();
+    newAnalyser.fftSize = 256;
+    source.connect(newAnalyser);
+    setAnalyser(newAnalyser);
+
+    return () => {
+      audioContext.close();
+      setAnalyser(null);
+    };
+  }, [mediaStream]);
+
+  // Render effect
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Scene setup
     const scene = new THREE.Scene();
-    const size = window.innerWidth / 8;
-    const camera = new THREE.PerspectiveCamera(75, size / size, 0.1, 1000);
+    scene.background = null;
+    const size = window.innerWidth / 10;
+    const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
 
-    // Create renderer with transparent background
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
       antialias: true,
+      premultipliedAlpha: false, // Add this line
     });
 
-    renderer.setSize(size, size);
-    renderer.setClearColor(0x000000, 0);
+    // Replace the container's content with the renderer's DOM element
+    containerRef.current.innerHTML = "";
+    containerRef.current.appendChild(renderer.domElement);
 
-    // Clean up any existing canvas
+    renderer.setSize(size, size);
+
+    // renderer.setClearColor(0x000000, 0); // Set alpha to 0
+    renderer.setClearColor(color, 1); // Green background (hex color)
+
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.NoToneMapping; // Add this
+    renderer.toneMappingExposure = 1; // And this
+
+    const renderScene = new RenderPass(scene, camera);
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(size, size),
+      0.5, // strength - increased but not too high
+      0.75, // radius
+      0.46
+    );
+
+    const bloomComposer = new EffectComposer(renderer);
+    bloomComposer.addPass(renderScene);
+    bloomComposer.addPass(bloomPass);
+    bloomComposer.addPass(new OutputPass());
+
+    containerRef.current.innerHTML = "";
+    containerRef.current.appendChild(renderer.domElement);
+
     containerRef.current.innerHTML = "";
     containerRef.current.appendChild(renderer.domElement);
 
     const uniforms = {
       u_time: { value: 0.0 },
+      u_frequency: { value: 0.0 },
+      u_red: { value: 0.0 }, // Red
+      u_green: { value: 0.0 }, // Green
+      u_blue: { value: 1.0 }, // Blue
     };
 
-    // Create a sphere for the visualizer
     const material = new THREE.ShaderMaterial({
       wireframe: true,
       uniforms,
@@ -150,9 +213,8 @@ export function Visualizer() {
       transparent: true,
     });
 
-    const geo = new THREE.IcosahedronGeometry(4, 6);
+    const geo = new THREE.IcosahedronGeometry(4, 5);
     const mesh = new THREE.Mesh(geo, material);
-
     scene.add(mesh);
     camera.position.z = 8;
 
@@ -160,34 +222,50 @@ export function Visualizer() {
 
     function animate() {
       uniforms.u_time.value = clock.getElapsedTime();
-      renderer.render(scene, camera);
+
+      if (analyser) {
+        const freqData = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(freqData);
+        const average = freqData.reduce((a, b) => a + b) / freqData.length;
+
+        uniforms.u_frequency.value = average;
+
+        // Normalize the average amplitude to a range [0, 1] (assuming 255 max)
+        const intensity = Math.min(average / 255, 1);
+
+        // Adjust colors: more intensity shifts the color toward white
+        uniforms.u_red.value = 0.2 + 0.8 * intensity; // Base red + intensity scaling
+        uniforms.u_green.value = 0.1 + 0.6 * intensity; // Base green + intensity scaling
+        uniforms.u_blue.value = 0.8 + 0.2 * intensity; // Base blue + intensity scaling
+      }
+
+      // Rotate mesh a small amount
+      mesh.rotation.x += 0.01;
+      mesh.rotation.y += 0.01;
+
+      bloomComposer.render();
+      animationRef.current = requestAnimationFrame(animate);
     }
 
-    renderer.setAnimationLoop(animate);
+    animate();
 
-    // Handle window resize
-    const handleResize = () => {
-      const newSize = window.innerWidth / 8;
-      camera.aspect = 1;
-      camera.updateProjectionMatrix();
-      renderer.setSize(newSize, newSize);
-    };
-
-    window.addEventListener("resize", handleResize);
-
-    // Cleanup function
     return () => {
-      window.removeEventListener("resize", handleResize);
-      renderer.setAnimationLoop(null);
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
       geo.dispose();
       material.dispose();
       renderer.dispose();
-
       if (containerRef.current) {
         containerRef.current.innerHTML = "";
       }
     };
-  }, []);
+  }, [analyser, color]);
 
-  return <div ref={containerRef} />;
+  return (
+    <div
+      ref={containerRef}
+      className="w-full aspect-square bg-transparent rounded-full overflow-hidden"
+    />
+  );
 }
