@@ -122,6 +122,8 @@ export function ConversationHandler({
               onClick={() => {
                 vad.pause();
                 setInConversation(false);
+                setAgentResponseAudio(null);
+                setAgentSpeaking(false);
               }}
               className="px-4 py-2 rounded-md font-medium transition-colors outline-offset-2 bg-red-500 hover:bg-red-600 text-white"
             >
